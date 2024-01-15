@@ -1,0 +1,4 @@
+gym-microrts
+scipy
+torch
+torchvision
