@@ -41,7 +41,8 @@ if __name__ == "__main__":
             map_paths=["maps/16x16/basesWorkers16x16.xml"]
     )
     obs = env.reset()
-    agent1 = Agent("", env)
+    agent1 = Agent.new("", env)
+    #agent1 = Agent.fromFile("test.agent", "", env)
 
     # Observation space:
     #   Feature     #_planes    Values
@@ -106,3 +107,5 @@ if __name__ == "__main__":
         #print(obs.shape)
 
     env.close()
+
+    #agent1.save("test.agent")

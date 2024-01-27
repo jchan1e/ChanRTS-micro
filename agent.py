@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.optim as optim
 #from torch.distribution.categorical import Categorical
 
-#device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def softmax(x, axis=None):
     x = x-x.max(axis=axis, keepdims=True)
@@ -73,25 +73,33 @@ class Agent():
         action_shape = env.get_action_mask().shape
         #print(obs_shape)
         #print(action_shape)
-        self.model = Model(obs_shape, action_shape)
+        #self.model = Model(obs_shape, action_shape)
         #self.model = Model(obs_shape, action_shape).to(device)
 
     @classmethod
-    def fromFile(cls, modelfile):
-        f = open(filename, "r")
-        self.model = torch.load(modelfile)
-        f.close()
+    def new(cls, agent_type, env):
+        A = cls(agent_type, env)
+        obs_shape = env.observation_space.shape
+        action_shape = env.get_action_mask().shape
+        A.model = Model(obs_shape, action_shape).to(device)
+        return A
+
+    @classmethod
+    def fromFile(cls, modelfile, agent_type, env):
+        A = cls(agent_type, env)
+        A.model = torch.load(modelfile).to(device)
+        return A
 
     def save(self, filename):
-        f = open(filename, "w")
-        torch.save(self.model, f)
-        f.close()
+        #f = open(filename, "w")
+        torch.save(self.model, filename)
+        #f.close()
 
     def set_obs(self, obs):
-        self.obs = torch.from_numpy(obs.astype(np.float32))
+        self.obs = torch.from_numpy(obs.astype(np.float32)).to(device)
 
     def set_action_mask(self, action_mask):
-        self.action_mask = torch.from_numpy(action_mask)
+        self.action_mask = torch.from_numpy(action_mask).to(device)
 
     def get_action(self):
         y = self.model.forward(self.obs)
@@ -99,7 +107,7 @@ class Agent():
         #print(y.shape)
         y = y.reshape(self.action_mask.shape)
         y = self.action_mask * y
-        y = y.detach().numpy() # This is where it should return to main RAM and run on cpu
+        y = y.cpu().detach().numpy() # This is where it should return to main RAM and run on cpu
         self.action = np.concatenate(
             (
                 sample(y[:, 0:6]),
