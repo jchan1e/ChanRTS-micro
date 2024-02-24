@@ -38,7 +38,8 @@ if __name__ == "__main__":
             ai2s=[bot_agent],
             #map_paths=["maps/4x4/base4x4.xml"]
             #map_paths=["maps/10x10/basesWorkers10x10.xml"]
-            map_paths=["maps/16x16/basesWorkers16x16.xml"]
+            map_paths=["maps/16x16/basesWorkers16x16.xml"],
+            reward_weight=np.array([10.0,1.0,1.0,0.2,1.0,4.0])
     )
     obs = env.reset()
     agent1 = Agent.new("", env)
@@ -104,6 +105,7 @@ if __name__ == "__main__":
 
         # Grid mode, concatenate all actions in an array
         obs, reward, done, info = env.step(action)
+        print(done, reward)
         #print(obs.shape)
 
     env.close()
