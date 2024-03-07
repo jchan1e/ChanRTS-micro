@@ -46,7 +46,7 @@ class Model(nn.Module):
                 nn.ReLU(),
                 )
         self.actor = layer_init(nn.Linear(256, np.prod(action_shape)), std=0.01)
-        self.critic = layer_init(nn.KLinear(256, 1), std=1)
+        self.critic = layer_init(nn.Linear(256, 1), std=1)
 
     def forward(self, x):
         #print(x.shape)
@@ -58,26 +58,29 @@ class Model(nn.Module):
     def get_value(self, x):
         return self.critic(self.forward(x))
 
-    def get_action(self, x, action_space):
+    # Taken wholesale from the script used in github.com/vwxyzjn/gym_microrts-paper
+    # May need adjustment for the fact that I'm not using batch training
+    def get_action(self, x, action=None, invalid_action_masks=None, env=None):
         logits = self.actor(self.forward(x))
-        grid_logits = logits.view(-1, action_space.nvec[1:].tolist(), dim=1)
-        split_logits = torch.split(grid_logits, action_space.nvec[1:].tolist(), dim=1)
+        grid_logits = logits.view(-1, env.action_space.nvec[:].sum())
+        split_logits = torch.split(grid_logits, env.action_space.nvec[:].tolist(), dim=1)
 
         if action is None:
-            invalid action masks = []
-            split_invalid_action_masks = []
-            multi_categoricals = []
-            action = []
+            invalid_action_masks = torch.tensor(np.array(env.vec_client.getMasks(0))).to(device)
+            invalid_action_masks = invalid_action_masks.view(-1, invalid_action_masks.shape[-1]) #flatten
+            split_invalid_action_masks = torch.split(invalid_action_masks[:,1:], env.action_space.nvec[1:].tolist(), dim=1)
+            multi_categoricals = [CategoricalMasked(logits=logits, masks=iam) for (logits, iam) in zip(split_logits, split_invalid_action_masks)]
+            action = torch.satck([categorical.sample() for categorical in multi_categoricals])
         else:
-            invalid action masks = []
+            invalid_action_masks = invalid_action_masks.view(-1, invalid_action_masks.shape[-1])
             action = action.view(-1, action.shape[-1]).T
-            split_invalid_action_masks = []
-            multi_categoricals = []
+            split_invalid_action_masks = torch.split(invalid_action_masks[:,1:], env.action_space.nvec[1:].toList(), dim=1)
+            multi_categoricals = [CategoricalMasked(logits=logits, masks=iam) for (logits, iam) in zip(split_logits, split_invalid_action_masks)]
 
         logprob = torch.stack([categorical.log_prob(a) for a, categorical in zip(action, multi_categoricals)])
         entropy = torch.stack([categoricals.entropy() for categorical in multi_categoricals])
         num_predicted_parameters = len(action_space.nvec) - 1
-        logprob = logprob.T.view(01, 256, num_predicted_parameters)
+        logprob = logprob.T.view(-1, 256, num_predicted_parameters)
         entropy = entropy.T.view(-1, 256, num_predicted_parameters)
         action = action.T.view(-1, 256, num_predicted_parameters)
         invalid_action_masks = invalid_action_masks.view(-1, 256, action_spacenvec[-1:].sum()+1)
@@ -135,23 +138,23 @@ class Agent():
         self.action_mask = torch.from_numpy(action_mask).to(device)
 
     def get_action(self):
-        y = self.model.get_action(self.obs)
+        y,_,_,_ = self.model.get_action(self.obs, env=self.env)
         #print(self.action_mask.shape)
         #print(y.shape)
-        y = y.reshape(self.action_mask.shape)
-        y = self.action_mask * y
-        y = y.cpu().detach().numpy() # This is where it should return to main RAM and run on cpu
-        self.action = np.concatenate(
-            (
-                sample(y[:, 0:6]),
-                sample(y[:, 6:10]),
-                sample(y[:, 10:14]),
-                sample(y[:, 14:18]),
-                sample(y[:, 18:22]),
-                sample(y[:, 22:29]),
-                sample(y[:, 29:78]),
-            ),
-            axis=1,
-        )
+        #y = y.reshape(self.action_mask.shape)
+        #y = self.action_mask * y
+        self.action = y.cpu().detach().numpy() # This is where it should return to main RAM and run on cpu
+        #self.action = np.concatenate(
+        #    (
+        #        sample(y[:, 0:6]),
+        #        sample(y[:, 6:10]),
+        #        sample(y[:, 10:14]),
+        #        sample(y[:, 14:18]),
+        #        sample(y[:, 18:22]),
+        #        sample(y[:, 22:29]),
+        #        sample(y[:, 29:78]),
+        #    ),
+        #    axis=1,
+        #)
         #print(self.action.shape)
         return self.action
