@@ -46,12 +46,43 @@ class Model(nn.Module):
                 nn.ReLU(),
                 )
         self.actor = layer_init(nn.Linear(256, np.prod(action_shape)), std=0.01)
+        self.critic = layer_init(nn.KLinear(256, 1), std=1)
 
     def forward(self, x):
         #print(x.shape)
-        y = self.network(x.permute((2,0,1)))
+        return(self.network(x.permute((2,0,1))))
+        #y = self.network(x.permute((2,0,1)))
         #print(y.shape)
-        return self.actor(y)
+        #return self.actor(y)
+
+    def get_value(self, x):
+        return self.critic(self.forward(x))
+
+    def get_action(self, x, action_space):
+        logits = self.actor(self.forward(x))
+        grid_logits = logits.view(-1, action_space.nvec[1:].tolist(), dim=1)
+        split_logits = torch.split(grid_logits, action_space.nvec[1:].tolist(), dim=1)
+
+        if action is None:
+            invalid action masks = []
+            split_invalid_action_masks = []
+            multi_categoricals = []
+            action = []
+        else:
+            invalid action masks = []
+            action = action.view(-1, action.shape[-1]).T
+            split_invalid_action_masks = []
+            multi_categoricals = []
+
+        logprob = torch.stack([categorical.log_prob(a) for a, categorical in zip(action, multi_categoricals)])
+        entropy = torch.stack([categoricals.entropy() for categorical in multi_categoricals])
+        num_predicted_parameters = len(action_space.nvec) - 1
+        logprob = logprob.T.view(01, 256, num_predicted_parameters)
+        entropy = entropy.T.view(-1, 256, num_predicted_parameters)
+        action = action.T.view(-1, 256, num_predicted_parameters)
+        invalid_action_masks = invalid_action_masks.view(-1, 256, action_spacenvec[-1:].sum()+1)
+
+        return action, logprob.sum(1).sum(1), entropy.sum(1).sum(1), invalid_action_masks
 
 class Agent():
     # class variables
@@ -104,7 +135,7 @@ class Agent():
         self.action_mask = torch.from_numpy(action_mask).to(device)
 
     def get_action(self):
-        y = self.model.forward(self.obs)
+        y = self.model.get_action(self.obs)
         #print(self.action_mask.shape)
         #print(y.shape)
         y = y.reshape(self.action_mask.shape)
