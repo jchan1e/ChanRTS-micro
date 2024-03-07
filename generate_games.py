@@ -33,7 +33,7 @@ np.set_printoptions(threshold=sys.maxsize)
 def loadAgents(env, list_of_filenames):
     agents = []
     for filename in list_of_filenames:
-        A = Agent.fromFile(filename, "", env)
+        A = Agent.fromFile(filename, "")
     return agents
 
 if __name__ == "__main__":

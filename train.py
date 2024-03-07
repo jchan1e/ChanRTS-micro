@@ -14,13 +14,7 @@ if __name__ == "__main__":
     datafiles = sys.argv[2:]
     agentfile = sys.argv[1]
 
-    env = MicroRTSGridModeVecEnv(
-            num_selfplay_envs=1,
-            num_bot_envs=0,
-            map_paths=["maps/16x16/basesWorkers16x16.xml"]
-    )
-
-    A = Agent.fromFile(agentfile, "", env)
+    A = Agent.fromFile(agentfile, "")
     data = []
     #data = [{}]
     for filename in datafiles:

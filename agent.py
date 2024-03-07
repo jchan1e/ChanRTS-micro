@@ -61,7 +61,7 @@ class Agent():
     model = None
     mapsize = 16*16
 
-    def __init__(self, agent_type, env):
+    def __init__(self, agent_type, env=None):
         # assign class variables
         self.env = env
         # populate initial observation
@@ -69,8 +69,8 @@ class Agent():
         # build model
         #if agent_type == "simple":
         #    pass
-        obs_shape = env.observation_space.shape
-        action_shape = env.get_action_mask().shape
+        #obs_shape = env.observation_space.shape
+        #action_shape = env.get_action_mask().shape
         #print(obs_shape)
         #print(action_shape)
         #self.model = Model(obs_shape, action_shape)
@@ -85,8 +85,8 @@ class Agent():
         return A
 
     @classmethod
-    def fromFile(cls, modelfile, agent_type, env):
-        A = cls(agent_type, env)
+    def fromFile(cls, modelfile, agent_type):
+        a = cls(agent_type)
         # Note: this uses the insecure Pickle library
         #   Do not unpickle data from untrusted sources
         A.model = torch.load(modelfile).to(device)
