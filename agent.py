@@ -90,7 +90,7 @@ class Agent():
     obs = None
     action = None
     model = None
-    mapsize = None
+    mapsize = 16*16
 
     def __init__(self, agent_type, env):
         # assign class variables
@@ -118,6 +118,8 @@ class Agent():
     @classmethod
     def fromFile(cls, modelfile, agent_type, env):
         A = cls(agent_type, env)
+        # Note: this uses the insecure Pickle library
+        #   Do not unpickle data from untrusted sources
         A.model = torch.load(modelfile).to(device)
         return A
 
