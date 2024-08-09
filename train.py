@@ -41,10 +41,13 @@ if __name__ == "__main__":
 
     for x_train, y_train in training_set:
 
-        y_pred = A.get_action(x_train)
-        v_loss = loss_fn(y_pred, y_train)
+        v_pred = A.model.get_value(x_train)
+        v_loss = loss_fn(v_pred, v_train)
+
+        y_pred, logprob, entropy, invalid_action_mask = A.get_action(x_train)
         e_loss = 0.0
         pg_loss = 0.0
+        loss = pg_logg - e_coef*e_loss + v_coef*v_loss
 
         optimizer.zero_grad()
         loss.backward()

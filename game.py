@@ -61,6 +61,7 @@ if __name__ == "__main__":
     #   ...
     #   Relative Attack Position    [0:a^2-1] Where a=7 (max attack range 3)
 
+    #print("Action Space: ", env.action_space)
     done = np.array([False,False,False])
     nvec = env.action_space.nvec
     while not done.any():
@@ -101,10 +102,10 @@ if __name__ == "__main__":
         agent1.set_action_mask(action_mask)
 
         # Get the agent's action vector
-        action = agent1.get_action()
+        action, _, _, _ = agent1.get_action()
 
         # Grid mode, concatenate all actions in an array
-        obs, reward, done, info = env.step(action)
+        obs, reward, done, info = env.step(action.cpu().numpy())
         print(done, reward)
         #print(obs.shape)
 

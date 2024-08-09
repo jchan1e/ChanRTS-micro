@@ -47,27 +47,31 @@ if __name__ == "__main__":
             map_paths=["maps/16x16/basesWorkers16x16.xml"]
     )
 
-    agents = loadAgents(env, sys.argv[1:])
-    bots =  [   microrts_ai.randomBiasedAI,
-                microrts_ai.workerRushAI,
-                microrts_ai.lightRushAI,
-                microrts_ai.mixedBot,
-                microrts_ai.coacAI,
-                microrts_ai.nativeMCTSAI
+    print(sys.argv[1:])
+    agents = loadAgents(env0, sys.argv[1:])
+    print(agents)
+    bots =  [   (microrts_ai.randomBiasedAI,    "randbias"),
+                (microrts_ai.workerRushAI,      "workerrush"),
+                (microrts_ai.lightRushAI,       "lightrush"),
+                (microrts_ai.mixedBot,          "mixedbot"),
+                (microrts_ai.coacAI,            "coacai"),
+                (microrts_ai.naiveMCTSAI,       "naivemcts")
             ]
     matchups = [(a, b) for a in agents for b in bots]
 
     # game data format: { obs , action , reward , won_overall }
-    game_data = []
-    outfile = open(outfilename, "wb")
-    writer = csv.DictWriter(outfile)
 
     for agent1, bot_agent in matchups:
+        game_data = []
+        print("outfile: ", agent1.name + "_" + bot_agent[1])
+        outfile = open(agent1.name + "_" + bot_agent[1], "wb")
+        writer = csv.DictWriter(outfile)
+
         #bot_agent = microrts_ai.coacAI
         env = MicroRTSGridModeVecEnv(
                 num_selfplay_envs=0,
                 num_bot_envs=1,
-                ai2s=[bot_agent],
+                ai2s=[bot_agent[0]],
                 #map_paths=["maps/4x4/base4x4.xml"]
                 #map_paths=["maps/10x10/basesWorkers10x10.xml"]
                 map_paths=["maps/16x16/basesWorkers16x16.xml"],

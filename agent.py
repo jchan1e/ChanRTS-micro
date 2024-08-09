@@ -10,6 +10,24 @@ import torch.optim as optim
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+class CategoricalMasked(torch.distributions.Categorical):
+    def __init__(self, logits, masks):
+        self.masks = masks
+        super().__init__(logits=logits)
+
+    def log_prob(self, value):
+        log_probs = super().log_prob(value)
+        return torch.where(self.masks, log_probs, torch.tensor(-1e8, device=log_probs.device))
+
+    def entropy(self):
+        p_log_p = self.logits * self.probs
+        return -torch.sum(p_log_p * self.masks, dim=-1)
+
+    def sample(self):
+        probs = self.probs * self.masks
+        probs = probs / probs.sum(dim=-1, keepdim=True)
+        return torch.multinomial(probs, num_samples=1).squeeze(-1)
+
 def softmax(x, axis=None):
     x = x-x.max(axis=axis, keepdims=True)
     y = np.exp(x)
@@ -60,32 +78,95 @@ class Model(nn.Module):
 
     # Taken wholesale from the script used in github.com/vwxyzjn/gym_microrts-paper
     # May need adjustment for the fact that I'm not using batch training
-    def get_action(self, x, action=None, invalid_action_masks=None, env=None):
+    def get_action(self, x=None, action=None, invalid_action_masks=None, env=None):
+        if x is None:
+            x = self.obs
         logits = self.actor(self.forward(x))
-        grid_logits = logits.view(-1, env.action_space.nvec[:].sum())
-        split_logits = torch.split(grid_logits, env.action_space.nvec[:].tolist(), dim=1)
+        print(f"Logits shape: {logits.shape}")
+
+        # Reshape logits to [256, 78]
+        grid_logits = logits.view(256, 78)
+
+        # Split the logits into 7 groups as per the action space
+        split_logits = torch.split(grid_logits, [6, 4, 4, 4, 4, 7, 49], dim=1)
+
+        if invalid_action_masks is None:
+            invalid_action_masks = torch.ones_like(grid_logits).bool()
+        else:
+            invalid_action_masks = invalid_action_masks.view(256, 78).bool()
+
+        split_invalid_action_masks = torch.split(invalid_action_masks, [6, 4, 4, 4, 4, 7, 49], dim=1)
+        multi_categoricals = [CategoricalMasked(logits=logits, masks=iam)
+                              for (logits, iam) in zip(split_logits, split_invalid_action_masks)]
 
         if action is None:
-            invalid_action_masks = torch.tensor(np.array(env.vec_client.getMasks(0))).to(device)
-            invalid_action_masks = invalid_action_masks.view(-1, invalid_action_masks.shape[-1]) #flatten
-            split_invalid_action_masks = torch.split(invalid_action_masks[:,1:], env.action_space.nvec[1:].tolist(), dim=1)
-            multi_categoricals = [CategoricalMasked(logits=logits, masks=iam) for (logits, iam) in zip(split_logits, split_invalid_action_masks)]
-            action = torch.satck([categorical.sample() for categorical in multi_categoricals])
+            action = torch.stack([categorical.sample() for categorical in multi_categoricals]).T
         else:
-            invalid_action_masks = invalid_action_masks.view(-1, invalid_action_masks.shape[-1])
-            action = action.view(-1, action.shape[-1]).T
-            split_invalid_action_masks = torch.split(invalid_action_masks[:,1:], env.action_space.nvec[1:].toList(), dim=1)
-            multi_categoricals = [CategoricalMasked(logits=logits, masks=iam) for (logits, iam) in zip(split_logits, split_invalid_action_masks)]
+            action = action.view(256, 7)
 
-        logprob = torch.stack([categorical.log_prob(a) for a, categorical in zip(action, multi_categoricals)])
-        entropy = torch.stack([categoricals.entropy() for categorical in multi_categoricals])
-        num_predicted_parameters = len(action_space.nvec) - 1
-        logprob = logprob.T.view(-1, 256, num_predicted_parameters)
-        entropy = entropy.T.view(-1, 256, num_predicted_parameters)
-        action = action.T.view(-1, 256, num_predicted_parameters)
-        invalid_action_masks = invalid_action_masks.view(-1, 256, action_spacenvec[-1:].sum()+1)
+        logprob = torch.stack([categorical.log_prob(a) for a, categorical in zip(action.T, multi_categoricals)])
+        entropy = torch.stack([categorical.entropy() for categorical in multi_categoricals])
 
-        return action, logprob.sum(1).sum(1), entropy.sum(1).sum(1), invalid_action_masks
+        return action, logprob.T, entropy.T, invalid_action_masks
+    #def get_action(self, x, action=None, invalid_action_masks=None, env=None):
+    #    logits = self.actor(self.forward(x))
+    #    print(f"Logits.shape: {logits.shape}")
+
+    #    # Reshape logits to [256, 78]
+    #    grid_logits = logits.view(256, 78)
+
+    #    # Split the logits into 7 groups as per the action space
+    #    split_logits = torch.split(grid_logits, [6, 4, 4, 4, 4, 7, 49], dim=1)
+
+    #    if action is None:
+    #        # If no action is provided, sample new actions
+    #        if invalid_action_masks is None:
+    #            invalid_action_masks = torch.ones_like(grid_logits).bool()
+    #        else:
+    #            invalid_action_masks = invalid_action_masks.view(256, 78).bool()
+
+    #        split_invalid_action_masks = torch.split(invalid_action_masks, [6, 4, 4, 4, 4, 7, 49], dim=1)
+    #        multi_categoricals = [CategoricalMasked(logits=logits, masks=iam)
+    #                              for (logits, iam) in zip(split_logits, split_invalid_action_masks)]
+    #        action = torch.stack([categorical.sample() for categorical in multi_categoricals])
+    #    else:
+    #        # If action is provided, use it for computing log probabilities
+    #        action = action.view(256, 7)
+    #        split_invalid_action_masks = torch.split(invalid_action_masks.view(256, 78), [6, 4, 4, 4, 4, 7, 49], dim=1)
+    #        multi_categoricals = [CategoricalMasked(logits=logits, masks=iam)
+    #                              for (logits, iam) in zip(split_logits, split_invalid_action_masks)]
+
+    #    logprob = torch.stack([categorical.log_prob(a) for a, categorical in zip(action.T, multi_categoricals)])
+    #    entropy = torch.stack([categorical.entropy() for categorical in multi_categoricals])
+
+    #    return action.T, logprob.T, entropy.T, invalid_action_masks
+
+        #grid_logits = logits.view(-1, env.action_space.nvec.sum())
+        #split_logits = torch.split(grid_logits, env.action_space.nvec.tolist(), dim=1)
+
+        ##TODO: Fix this
+
+        #if action is None:
+        #    invalid_action_masks = torch.tensor(np.array(env.vec_client.getMasks(0))).to(device)
+        #    invalid_action_masks = invalid_action_masks.view(-1, invalid_action_masks.shape[-1]) #flatten
+        #    split_invalid_action_masks = torch.split(invalid_action_masks, env.action_space.nvec.tolist(), dim=1)
+        #    multi_categoricals = [CategoricalMasked(logits=logits, masks=iam) for (logits, iam) in zip(split_logits, split_invalid_action_masks)]
+        #    action = torch.satck([categorical.sample() for categorical in multi_categoricals])
+        #else:
+        #    invalid_action_masks = invalid_action_masks.view(-1, invalid_action_masks.shape[-1])
+        #    action = action.view(-1, action.shape[-1]).T
+        #    split_invalid_action_masks = torch.split(invalid_action_masks, env.action_space.nvec.toList(), dim=1)
+        #    multi_categoricals = [CategoricalMasked(logits=logits, masks=iam) for (logits, iam) in zip(split_logits, split_invalid_action_masks)]
+
+        #logprob = torch.stack([categorical.log_prob(a) for a, categorical in zip(action, multi_categoricals)])
+        #entropy = torch.stack([categoricals.entropy() for categorical in multi_categoricals])
+        #num_predicted_parameters = len(action_space.nvec) - 1
+        #logprob = logprob.T.view(-1, 256, num_predicted_parameters)
+        #entropy = entropy.T.view(-1, 256, num_predicted_parameters)
+        #action = action.T.view(-1, 256, num_predicted_parameters)
+        #invalid_action_masks = invalid_action_masks.view(-1, 256, action_spacenvec.sum()+1)
+
+        #return action, logprob.sum(1).sum(1), entropy.sum(1).sum(1), invalid_action_masks
 
 class Agent():
     # class variables
@@ -94,6 +175,7 @@ class Agent():
     action = None
     model = None
     mapsize = 16*16
+    name = ""
 
     def __init__(self, agent_type, env=None):
         # assign class variables
@@ -120,10 +202,11 @@ class Agent():
 
     @classmethod
     def fromFile(cls, modelfile, agent_type):
-        a = cls(agent_type)
+        A = cls(agent_type)
         # Note: this uses the insecure Pickle library
         #   Do not unpickle data from untrusted sources
         A.model = torch.load(modelfile).to(device)
+        A.name = modelfile.split("/")[-1].split(".")[0]
         return A
 
     def save(self, filename):
